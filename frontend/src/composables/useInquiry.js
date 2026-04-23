@@ -94,11 +94,8 @@ export function useInquiry(initialBrand = '') {
       errors.year = 'Selecciona el año del vehículo.'
       valid = false
     }
-    if (!form.vin.trim()) {
-      errors.vin = 'El VIN es requerido.'
-      valid = false
-    } else if (form.vin.replace(/\s/g, '').length !== 17) {
-      errors.vin = 'El VIN debe tener exactamente 17 caracteres.'
+    if (form.vin.trim() && form.vin.replace(/\s/g, '').length !== 17) {
+      errors.vin = 'El VIN debe tener exactamente 17 caracteres (o déjalo vacío).'
       valid = false
     }
     if (!form.description.trim() || form.description.trim().length < 10) {
@@ -136,7 +133,13 @@ export function useInquiry(initialBrand = '') {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data?.detail || `Error ${res.status}`)
+        let msg = `Error ${res.status}`
+        if (Array.isArray(data?.detail)) {
+          msg = data.detail.map(e => e.msg).join(', ')
+        } else if (typeof data?.detail === 'string') {
+          msg = data.detail
+        }
+        throw new Error(msg)
       }
 
       success.value = true
