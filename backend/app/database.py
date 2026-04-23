@@ -33,10 +33,13 @@ async def connect_db():
     global client
     uri = settings.mongodb_uri.strip().strip('"').strip("'")
     try:
-        # En macOS usamos certifi; en Linux (Railway) usamos el CA del sistema
+        # En macOS usamos certifi; en Linux (Railway) deshabilitamos verificación estricta
         kwargs = {"serverSelectionTimeoutMS": 8000}
         if sys.platform == "darwin":
             kwargs["tlsCAFile"] = certifi.where()
+        else:
+            kwargs["tls"] = True
+            kwargs["tlsInsecure"] = True
         client = AsyncIOMotorClient(uri, **kwargs)
         await client.admin.command("ping")
         print(f"✅ Conectado a MongoDB: {settings.database_name}")
