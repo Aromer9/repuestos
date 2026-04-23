@@ -32,12 +32,12 @@ async def connect_db():
     global client
     uri = settings.mongodb_uri.strip().strip('"').strip("'")
     try:
-        client = AsyncIOMotorClient(uri, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
+        client = AsyncIOMotorClient(uri, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=8000)
         await client.admin.command("ping")
         print(f"✅ Conectado a MongoDB: {settings.database_name}")
     except Exception as e:
-        print(f"❌ Error conectando a MongoDB: {e}")
-        raise
+        print(f"⚠️  MongoDB no disponible: {e}")
+        print("⚠️  El servidor arrancará de todas formas — verifica MONGODB_URI y Network Access en Atlas")
 
 
 async def close_db():
