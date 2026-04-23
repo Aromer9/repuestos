@@ -1,3 +1,4 @@
+import sys
 import certifi
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic_settings import BaseSettings
@@ -32,7 +33,11 @@ async def connect_db():
     global client
     uri = settings.mongodb_uri.strip().strip('"').strip("'")
     try:
-        client = AsyncIOMotorClient(uri, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=8000)
+        # En macOS usamos certifi; en Linux (Railway) usamos el CA del sistema
+        kwargs = {"serverSelectionTimeoutMS": 8000}
+        if sys.platform == "darwin":
+            kwargs["tlsCAFile"] = certifi.where()
+        client = AsyncIOMotorClient(uri, **kwargs)
         await client.admin.command("ping")
         print(f"✅ Conectado a MongoDB: {settings.database_name}")
     except Exception as e:
