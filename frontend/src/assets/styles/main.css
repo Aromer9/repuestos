@@ -1,0 +1,112 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ────────────────────────────────────────────────────────
+   NOTA: en @apply dentro de archivos .css no se pueden
+   usar colores personalizados con guiones (ink-900,
+   subaru-mid). Se usan valores hexadecimales directos.
+   En templates .vue sí funcionan las clases normales.
+──────────────────────────────────────────────────────── */
+
+@layer base {
+  * { @apply box-border; }
+  html { scroll-behavior: smooth; }
+  body {
+    background-color: #ffffff;
+    color: #0D1B2A;
+    @apply font-sans antialiased;
+  }
+}
+
+@layer components {
+
+  /* ── Botones ── */
+  .btn-primary {
+    @apply inline-flex items-center justify-center px-6 py-3
+           font-semibold rounded-md transition-all duration-200
+           active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-offset-2;
+    background-color: #0055A5;
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(0,85,165,0.25);
+  }
+  .btn-primary:hover  { background-color: #003087; }
+  .btn-primary:focus  { --tw-ring-color: #0055A5; }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center px-6 py-3
+           font-semibold rounded-md border transition-all duration-200
+           bg-white active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-offset-2;
+    border-color: #0055A5;
+    color: #0055A5;
+  }
+  .btn-secondary:hover { background-color: #E8F2FB; border-color: #003087; }
+  .btn-secondary:focus { --tw-ring-color: #0055A5; }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center px-4 py-2
+           font-medium rounded-md transition-colors duration-150 focus:outline-none;
+    color: #475569;
+  }
+  .btn-ghost:hover { color: #0055A5; background-color: #E8F2FB; }
+
+  /* ── Cards ── */
+  .card {
+    @apply bg-white rounded-xl overflow-hidden transition-all duration-300;
+    border: 1px solid #E2E8F0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.06);
+  }
+  .card:hover {
+    border-color: rgba(0,85,165,0.2);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 12px 30px rgba(0,48,135,0.10);
+  }
+
+  /* ── Formularios ── */
+  .input-field {
+    @apply w-full bg-white rounded-lg px-4 py-3 transition-colors duration-200 focus:outline-none;
+    border: 1px solid #E2E8F0;
+    color: #0D1B2A;
+  }
+  .input-field::placeholder { color: #94A3B8; }
+  .input-field:focus {
+    border-color: #0055A5;
+    box-shadow: 0 0 0 3px rgba(0,85,165,0.08);
+  }
+
+  .label {
+    @apply block text-sm font-medium mb-1.5;
+    color: #475569;
+  }
+
+  /* ── Tipografía ── */
+  .section-title  { @apply text-3xl md:text-4xl font-bold leading-tight; color: #0D1B2A; }
+  .section-subtitle { @apply mt-3 text-lg; color: #94A3B8; }
+
+  /* ── Tags ── */
+  .tag {
+    @apply inline-block px-2.5 py-0.5 text-xs font-semibold rounded-full;
+    background-color: #E8F2FB;
+    color: #0055A5;
+    border: 1px solid rgba(0,85,165,0.15);
+  }
+  .tag-navy {
+    @apply inline-block px-2.5 py-0.5 text-xs font-semibold rounded-full;
+    background-color: rgba(0,48,135,0.06);
+    color: #003087;
+    border: 1px solid rgba(0,48,135,0.12);
+  }
+}
+
+/* ── Transiciones de página ── */
+.page-enter-active,
+.page-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
+.page-enter-from   { opacity: 0; transform: translateY(6px); }
+.page-leave-to     { opacity: 0; transform: translateY(-4px); }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar       { width: 5px; }
+::-webkit-scrollbar-track { background: #F1F5F9; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #0055A5; }
