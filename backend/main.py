@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,20 +14,25 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="JDMParts API",
+    title="ARGParts API",
     description="API para captura y gestión de cotizaciones de repuestos japoneses.",
     version="1.0.0",
     lifespan=lifespan,
 )
 
+# Orígenes permitidos: locales + Railway (via variable de entorno FRONTEND_URL)
+_extra_origin = os.getenv("FRONTEND_URL", "")
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:3000",
+]
+if _extra_origin:
+    ALLOWED_ORIGINS.append(_extra_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:5175",
-        "http://localhost:3000",
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,7 +47,7 @@ app.include_router(webhook.router, prefix="/api")
 
 @app.get("/", tags=["Health"])
 async def root():
-    return {"status": "ok", "service": "JDMParts API"}
+    return {"status": "ok", "service": "ARGParts API"}
 
 
 @app.get("/api/health", tags=["Health"])
