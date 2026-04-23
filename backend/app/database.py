@@ -30,8 +30,9 @@ client: AsyncIOMotorClient | None = None
 
 async def connect_db():
     global client
-    client = AsyncIOMotorClient(settings.mongodb_uri, tlsCAFile=certifi.where())
+    uri = settings.mongodb_uri.strip().strip('"').strip("'")
     try:
+        client = AsyncIOMotorClient(uri, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
         await client.admin.command("ping")
         print(f"✅ Conectado a MongoDB: {settings.database_name}")
     except Exception as e:

@@ -20,20 +20,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Orígenes permitidos: locales + Railway (via variable de entorno FRONTEND_URL)
-_extra_origin = os.getenv("FRONTEND_URL", "")
-ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:3000",
-]
-if _extra_origin:
-    ALLOWED_ORIGINS.append(_extra_origin)
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
