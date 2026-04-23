@@ -1,4 +1,5 @@
 import { ref, reactive } from 'vue'
+import { API_BASE } from './useApi'
 
 const CURRENT_YEAR = new Date().getFullYear()
 
@@ -125,7 +126,7 @@ export function useInquiry(initialBrand = '') {
         product_id: form.product_id || null,
       }
 
-      const res = await fetch('/api/inquiries/', {
+      const res = await fetch(`${API_BASE}/api/inquiries/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
