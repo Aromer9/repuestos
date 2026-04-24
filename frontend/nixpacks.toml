@@ -2,7 +2,9 @@
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["npm install"]
+# --include=dev evita el aviso deprecado "Use --omit=dev" cuando NPM_CONFIG_PRODUCTION
+# está activo en el host, y asegura instalar Vite/Tailwind (devDependencies) para el build
+cmds = ["npm install --include=dev"]
 
 [phases.build]
 cmds = ["npm run build"]
