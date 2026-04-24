@@ -1,18 +1,24 @@
 """
-Servicio de WhatsApp via Meta Cloud API.
-Documentación: https://developers.facebook.com/docs/whatsapp/cloud-api/messages
+Servicio de WhatsApp via Evolution API (open source).
+Docs: https://doc.evolution-api.com/v2/api-reference/message-controller/send-text
+
+Cada mensaje enviado se registra en la coleccion message_log para trazabilidad.
+Si las variables de entorno no estan configuradas opera en modo simulacion.
 """
 import httpx
 import logging
-from app.database import settings
+from datetime import datetime, timezone
+
+from app.database import get_db, settings
 
 logger = logging.getLogger("openclaw.whatsapp")
 
-WA_API_URL = "https://graph.facebook.com/v19.0"
-
 
 def _clean_phone(phone: str) -> str:
-    """Normaliza el número: solo dígitos, agrega 56 si es chileno sin código."""
+    """
+    Normaliza el numero para Evolution API: solo digitos, con codigo de pais.
+    Ejemplos: '912345678' -> '56912345678', '+56912345678' -> '56912345678'
+    """
     digits = "".join(c for c in phone if c.isdigit())
     if digits.startswith("0"):
         digits = digits[1:]
@@ -21,38 +27,55 @@ def _clean_phone(phone: str) -> str:
     return digits
 
 
+async def _log_outbound(to: str, message: str, status: str):
+    try:
+        db = get_db()
+        await db.message_log.insert_one({
+            "to": to,
+            "direction": "outbound",
+            "type": "text",
+            "text": message,
+            "status": status,
+            "sent_at": datetime.now(timezone.utc),
+        })
+    except Exception:
+        pass
+
+
 async def send_text(to: str, message: str) -> bool:
-    """Envía un mensaje de texto libre por WhatsApp."""
-    if not settings.whatsapp_token or not settings.whatsapp_phone_id:
-        logger.warning("WhatsApp no configurado — mensaje no enviado.")
-        logger.info(f"[SIMULADO → {to}]: {message}")
+    """Envia un mensaje de texto libre por WhatsApp via Evolution API."""
+    if not settings.evolution_api_url or not settings.evolution_instance:
+        logger.warning(f"Evolution API no configurada — mensaje simulado a {to}")
+        logger.info(f"[SIMULADO -> {to}]: {message}")
+        await _log_outbound(to, message, "simulated")
         return False
 
     phone = _clean_phone(to)
+    url = (
+        f"{settings.evolution_api_url.rstrip('/')}"
+        f"/message/sendText/{settings.evolution_instance}"
+    )
     payload = {
-        "messaging_product": "whatsapp",
-        "to": phone,
-        "type": "text",
-        "text": {"body": message},
+        "number": phone,
+        "text": message,
     }
     headers = {
-        "Authorization": f"Bearer {settings.whatsapp_token}",
+        "apikey": settings.evolution_api_key,
         "Content-Type": "application/json",
     }
 
     async with httpx.AsyncClient(timeout=15) as client:
         try:
-            res = await client.post(
-                f"{WA_API_URL}/{settings.whatsapp_phone_id}/messages",
-                json=payload,
-                headers=headers,
-            )
-            if res.status_code == 200:
-                logger.info(f"✅ WhatsApp enviado a {phone}")
+            res = await client.post(url, json=payload, headers=headers)
+            if res.status_code in (200, 201):
+                logger.info(f"WhatsApp enviado a {phone}")
+                await _log_outbound(phone, message, "sent")
                 return True
             else:
-                logger.error(f"❌ Error WhatsApp {res.status_code}: {res.text}")
+                logger.error(f"Error Evolution API {res.status_code}: {res.text}")
+                await _log_outbound(phone, message, f"error_{res.status_code}")
                 return False
         except Exception as e:
-            logger.error(f"❌ Excepción WhatsApp: {e}")
+            logger.error(f"Excepcion Evolution API: {e}")
+            await _log_outbound(phone, message, "exception")
             return False

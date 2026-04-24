@@ -69,9 +69,11 @@ class InquiryResponse(BaseModel):
     brand: str
     model: str
     year: int
-    vin: str | None
+    vin: str | None = None
     part_description: str
-    product_id: str | None
+    product_id: str | None = None
     status: str
+    agent_status: str | None = None
+    partners_contacted: int | None = None
     created_at: datetime
     updated_at: datetime

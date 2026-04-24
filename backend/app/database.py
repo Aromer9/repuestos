@@ -7,10 +7,10 @@ class Settings(BaseSettings):
     mongodb_uri: str = "mongodb://localhost:27017"
     database_name: str = "argparts"
 
-    # Meta WhatsApp Cloud API
-    whatsapp_token: str = ""
-    whatsapp_phone_id: str = ""
-    whatsapp_verify_token: str = "argparts_webhook_2026"
+    # Evolution API (WhatsApp open source)
+    evolution_api_url: str = ""       # ej: https://evolution.tudominio.railway.app
+    evolution_api_key: str = ""       # API key global de la instancia
+    evolution_instance: str = ""      # nombre de la instancia, ej: argparts
 
     # AI providers (opcionales)
     anthropic_api_key: str = ""
