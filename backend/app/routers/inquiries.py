@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Annotated
@@ -20,13 +19,17 @@ def serialize_inquiry(doc: dict) -> InquiryResponse:
     return InquiryResponse(**doc)
 
 
-def _run_agent(inquiry: dict) -> None:
-    """Lanza el agente OpenClaw en un nuevo event loop (para BackgroundTasks)."""
+async def _run_agent(inquiry: dict) -> None:
+    """
+    Ejecuta OpenClaw en el mismo event loop que FastAPI.
+    No usar asyncio.run() aqui: Motor y httpx comparten el loop del servidor
+    y si no, falla con 'Future attached to a different loop'.
+    """
     from app.agent import openclaw
     try:
-        asyncio.run(openclaw.run(inquiry))
+        await openclaw.run(inquiry)
     except Exception as e:
-        logger.error(f"Error en agente OpenClaw: {e}")
+        logger.error(f"Error en agente OpenClaw: {e}", exc_info=True)
 
 
 @router.post(

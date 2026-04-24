@@ -17,7 +17,6 @@ Evolution API envia un POST con el siguiente payload:
 Cuando llega un mensaje, identifica si proviene de un cliente o proveedor,
 busca la cotizacion asociada, y dispara el agente OpenClaw para responder.
 """
-import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -83,12 +82,12 @@ async def _find_inquiry_for_number(db, phone: str):
     return None, None
 
 
-def _run_agent_reply(inquiry: dict, extra_messages: list[dict]) -> None:
+async def _run_agent_reply(inquiry: dict, extra_messages: list[dict]) -> None:
     from app.agent import openclaw
     try:
-        asyncio.run(openclaw.run(inquiry, extra_messages=extra_messages))
+        await openclaw.run(inquiry, extra_messages=extra_messages)
     except Exception as e:
-        logger.error(f"Error en agente OpenClaw (reply): {e}")
+        logger.error(f"Error en agente OpenClaw (reply): {e}", exc_info=True)
 
 
 async def _handle_partner_response(db, phone: str, text: str):
