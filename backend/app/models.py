@@ -75,5 +75,25 @@ class InquiryResponse(BaseModel):
     status: str
     agent_status: str | None = None
     partners_contacted: int | None = None
+    # Borrador generado por la IA para aprobacion interna
+    proposed_client_message: str | None = None
+    proposed_best_option: str | None = None
+    approved_at: datetime | None = None
+    approved_by: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class PartnerQuoteResponse(BaseModel):
+    id: str
+    partner_name: str
+    partner_brand: str
+    partner_phone: str
+    status: str
+    response: str | None = None
+    price_amount: float | None = None
+    price_currency: str = "CLP"
+    is_original: bool | None = None
+    message_sent: str | None = None
+    sent_at: datetime
+    responded_at: datetime | None = None

@@ -319,14 +319,18 @@
 
       <!-- Modal detalle cotización -->
       <div v-if="selectedInquiry" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" @click.self="selectedInquiry = null">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
           <div class="flex items-start justify-between mb-4">
             <div>
               <h2 class="text-lg font-semibold text-slate-900">{{ selectedInquiry.name }}</h2>
               <p class="text-slate-500 text-sm">{{ selectedInquiry.rut }} · {{ selectedInquiry.phone }}</p>
             </div>
-            <StatusBadge :status="selectedInquiry.status" />
+            <div class="flex items-center gap-2">
+              <AgentBadge :agent_status="selectedInquiry.agent_status" />
+              <StatusBadge :status="selectedInquiry.status" />
+            </div>
           </div>
+
           <div class="grid grid-cols-2 gap-3 text-sm mb-4">
             <div class="bg-slate-50 rounded-lg p-3">
               <p class="text-slate-400 text-xs mb-0.5">Vehículo</p>
@@ -341,7 +345,93 @@
               <p class="text-slate-900">{{ selectedInquiry.part_description }}</p>
             </div>
           </div>
-          <div class="flex flex-wrap gap-2">
+
+          <!-- Sección aprobación (solo cuando agent_status === 'awaiting_approval') -->
+          <template v-if="selectedInquiry.agent_status === 'awaiting_approval'">
+            <div class="border-t border-slate-100 pt-4 mt-2">
+              <h3 class="text-sm font-semibold text-slate-800 mb-3">Ofertas de proveedores</h3>
+
+              <div v-if="loadingQuotes" class="text-slate-400 text-sm text-center py-4">Cargando ofertas…</div>
+              <div v-else-if="partnerQuotes.length === 0" class="text-slate-400 text-sm text-center py-4">Sin cotizaciones de proveedores aún.</div>
+              <div v-else class="overflow-x-auto rounded-lg border border-slate-100 mb-4">
+                <table class="w-full text-xs">
+                  <thead>
+                    <tr class="bg-slate-50 text-slate-500 uppercase tracking-wide">
+                      <th class="text-left px-3 py-2">Proveedor</th>
+                      <th class="text-left px-3 py-2">Precio</th>
+                      <th class="text-left px-3 py-2">Tipo</th>
+                      <th class="text-left px-3 py-2">Estado</th>
+                      <th class="text-left px-3 py-2">Respuesta</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100">
+                    <tr v-for="q in partnerQuotes" :key="q.id" class="hover:bg-slate-50">
+                      <td class="px-3 py-2.5">
+                        <p class="font-medium text-slate-900">{{ q.partner_name }}</p>
+                        <p class="text-slate-400">{{ q.partner_brand }}</p>
+                      </td>
+                      <td class="px-3 py-2.5">
+                        <span v-if="q.price_amount" class="font-semibold text-slate-900">
+                          ${{ q.price_amount.toLocaleString('es-CL') }}
+                        </span>
+                        <span v-else class="text-slate-300">—</span>
+                      </td>
+                      <td class="px-3 py-2.5">
+                        <span v-if="q.is_original === true" class="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Original</span>
+                        <span v-else-if="q.is_original === false" class="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Alt.</span>
+                        <span v-else class="text-slate-300">—</span>
+                      </td>
+                      <td class="px-3 py-2.5">
+                        <span class="px-1.5 py-0.5 rounded-full text-xs font-medium"
+                          :class="{
+                            'bg-slate-100 text-slate-500': q.status === 'waiting',
+                            'bg-green-100 text-green-700': q.status === 'responded',
+                            'bg-red-100 text-red-500':     q.status === 'no_response',
+                          }">
+                          {{ { waiting: 'Esperando', responded: 'Respondió', no_response: 'Sin respuesta' }[q.status] || q.status }}
+                        </span>
+                      </td>
+                      <td class="px-3 py-2.5 text-slate-500 max-w-xs truncate">{{ q.response || '—' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Mejor opción resumen -->
+              <div v-if="selectedInquiry.proposed_best_option" class="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mb-4 text-sm">
+                <p class="text-xs text-blue-500 font-semibold mb-0.5">Recomendación del agente</p>
+                <p class="text-blue-800">{{ selectedInquiry.proposed_best_option }}</p>
+              </div>
+
+              <!-- Borrador editable -->
+              <div class="mb-4">
+                <label class="block text-xs font-semibold text-slate-700 mb-1">
+                  Mensaje para el cliente
+                  <span class="font-normal text-slate-400">(puedes editarlo antes de aprobar)</span>
+                </label>
+                <textarea v-model="draftMessage" rows="6"
+                  class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0055A5] resize-none font-mono leading-relaxed"/>
+              </div>
+
+              <!-- Botones aprobar / rechazar -->
+              <div class="flex gap-2">
+                <button @click="rejectInquiry" :disabled="approvalLoading"
+                  class="flex-1 py-2 rounded-lg border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50 transition disabled:opacity-50">
+                  Rechazar borrador
+                </button>
+                <button @click="approveInquiry" :disabled="approvalLoading || !draftMessage"
+                  class="flex-1 py-2 rounded-lg text-white text-sm font-semibold transition disabled:opacity-50"
+                  style="background-color: #16a34a;">
+                  <span v-if="approvalLoading">Enviando…</span>
+                  <span v-else>✅ Aprobar y enviar al cliente</span>
+                </button>
+              </div>
+              <p v-if="approvalError" class="mt-2 text-red-600 text-xs">{{ approvalError }}</p>
+            </div>
+          </template>
+
+          <!-- Acciones de estado (solo cuando NO está en aprobación) -->
+          <div class="flex flex-wrap gap-2 mt-4 border-t border-slate-100 pt-4">
             <button v-for="s in ['pending','quoted','closed']" :key="s"
               :disabled="selectedInquiry.status === s"
               @click="changeStatus(selectedInquiry, s); selectedInquiry = null"
@@ -420,6 +510,13 @@ const loadingData = ref(false)
 const statusFilter = ref('')
 const selectedInquiry = ref(null)
 
+// Aprobación interna
+const partnerQuotes = ref([])
+const loadingQuotes = ref(false)
+const draftMessage = ref('')
+const approvalLoading = ref(false)
+const approvalError = ref('')
+
 // Usuarios
 const adminUsers = ref([])
 const showNewUser = ref(false)
@@ -459,7 +556,62 @@ const changeStatus = async (inq, newStatus) => {
   }
 }
 
-const openDetail = (inq) => { selectedInquiry.value = { ...inq } }
+const openDetail = async (inq) => {
+  selectedInquiry.value = { ...inq }
+  partnerQuotes.value = []
+  draftMessage.value = inq.proposed_client_message || ''
+  approvalError.value = ''
+  if (inq.agent_status === 'awaiting_approval') {
+    loadingQuotes.value = true
+    try {
+      const res = await authFetch(`/api/inquiries/${inq.id}/quotes`)
+      if (res?.ok) partnerQuotes.value = await res.json()
+    } finally {
+      loadingQuotes.value = false
+    }
+  }
+}
+
+const approveInquiry = async () => {
+  approvalLoading.value = true
+  approvalError.value = ''
+  try {
+    const res = await authFetch(`/api/inquiries/${selectedInquiry.value.id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ message: draftMessage.value }),
+    })
+    if (res?.ok) {
+      const updated = await res.json()
+      const idx = inquiries.value.findIndex(i => i.id === updated.id)
+      if (idx !== -1) inquiries.value[idx] = updated
+      selectedInquiry.value = null
+    } else {
+      const data = await res?.json().catch(() => ({}))
+      approvalError.value = data?.detail || 'Error al aprobar la cotización'
+    }
+  } finally {
+    approvalLoading.value = false
+  }
+}
+
+const rejectInquiry = async () => {
+  approvalLoading.value = true
+  approvalError.value = ''
+  try {
+    const res = await authFetch(`/api/inquiries/${selectedInquiry.value.id}/reject`, { method: 'POST' })
+    if (res?.ok) {
+      const updated = await res.json()
+      const idx = inquiries.value.findIndex(i => i.id === updated.id)
+      if (idx !== -1) inquiries.value[idx] = updated
+      selectedInquiry.value = null
+    } else {
+      const data = await res?.json().catch(() => ({}))
+      approvalError.value = data?.detail || 'Error al rechazar el borrador'
+    }
+  } finally {
+    approvalLoading.value = false
+  }
+}
 
 // --- Usuarios ---
 const fetchUsers = async () => {
@@ -564,19 +716,26 @@ const AgentBadge = {
   template: `
     <span v-if="agent_status" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
       :class="{
-        'bg-slate-100 text-slate-400':   agent_status === 'queued',
-        'bg-violet-100 text-violet-700': agent_status === 'processing',
-        'bg-green-100 text-green-700':   agent_status === 'quoted',
-        'bg-amber-100 text-amber-700':   agent_status === 'awaiting_manual',
-        'bg-orange-100 text-orange-700': agent_status === 'no_partners',
+        'bg-slate-100 text-slate-400':    agent_status === 'queued',
+        'bg-violet-100 text-violet-700':  agent_status === 'processing',
+        'bg-blue-100 text-blue-700':      agent_status === 'awaiting_partners',
+        'bg-yellow-100 text-yellow-800':  agent_status === 'awaiting_approval',
+        'bg-green-100 text-green-700':    agent_status === 'quoted',
+        'bg-amber-100 text-amber-700':    agent_status === 'awaiting_manual',
+        'bg-orange-100 text-orange-700':  agent_status === 'no_partners',
+        'bg-red-100 text-red-600':        agent_status === 'error',
       }">
       <span v-if="agent_status === 'processing'" class="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse"/>
+      <span v-if="agent_status === 'awaiting_approval'" class="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"/>
       {{ {
-        queued:          '⏳ En cola',
-        processing:      '🤖 Cotizando',
-        quoted:          '✅ Enviado',
-        awaiting_manual: '✍️ Manual',
-        no_partners:     '⚠️ Sin partners',
+        queued:             '⏳ En cola',
+        processing:         '🤖 Cotizando',
+        awaiting_partners:  '⏱ Esperando proveedores',
+        awaiting_approval:  '👀 Por aprobar',
+        quoted:             '✅ Enviado',
+        awaiting_manual:    '✍️ Manual',
+        no_partners:        '⚠️ Sin partners',
+        error:              '❌ Error',
       }[agent_status] || agent_status }}
     </span>
     <span v-else class="text-slate-300 text-xs">—</span>

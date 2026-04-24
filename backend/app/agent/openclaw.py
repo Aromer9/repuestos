@@ -136,8 +136,59 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "check_partner_responses",
-            "description": "Consulta si algún proveedor ya respondió con precios para esta cotización.",
+            "description": "Consulta si algún proveedor ya respondió con precios para esta cotización. Devuelve nombre, estado, precio y respuesta de cada uno.",
             "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_partner_price",
+            "description": (
+                "Guarda el precio estructurado de un proveedor en partner_quotes. "
+                "Llama esta tool cada vez que proceses la respuesta de un proveedor con datos de precio. "
+                "Usa el telefono del proveedor para identificar el registro."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "partner_phone": {"type": "string", "description": "Telefono del proveedor"},
+                    "price_amount": {"type": "number", "description": "Precio en numeros (ej: 45000)"},
+                    "price_currency": {"type": "string", "description": "Moneda, default CLP", "default": "CLP"},
+                    "is_original": {"type": "boolean", "description": "True si es repuesto original, False si es alternativo, null si no se sabe"},
+                    "summary": {"type": "string", "description": "Resumen breve de la oferta (ej: 'Original Toyota, stock inmediato, $45.000')"},
+                },
+                "required": ["partner_phone", "price_amount", "summary"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "submit_draft_for_approval",
+            "description": (
+                "Guarda el borrador de cotizacion para aprobacion interna del admin. "
+                "NO envia nada al cliente — solo prepara el borrador y notifica al admin. "
+                "Llama esta tool cuando TODOS los proveedores hayan respondido y hayas analizado las ofertas."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "proposed_message": {
+                        "type": "string",
+                        "description": (
+                            "Mensaje completo que se enviaria al cliente si el admin aprueba. "
+                            "Debe incluir las opciones de precio, indicar cual es la mejor y por que. "
+                            "Tono natural, como si lo escribiera una persona del equipo ARGParts."
+                        ),
+                    },
+                    "best_option_summary": {
+                        "type": "string",
+                        "description": "Resumen interno de 1-2 lineas con la mejor opcion y su precio (para que el admin entienda rapidamente).",
+                    },
+                },
+                "required": ["proposed_message", "best_option_summary"],
+            },
         },
     },
 ]
@@ -246,12 +297,76 @@ async def execute_tool(name: str, inputs: dict, inquiry: dict) -> str:
             responses.append({
                 "partner": pq["partner_name"],
                 "status": pq["status"],
-                "price": pq.get("price"),
+                "price_amount": pq.get("price_amount"),
+                "price_currency": pq.get("price_currency", "CLP"),
+                "is_original": pq.get("is_original"),
+                "summary": pq.get("price_summary"),
                 "response": pq.get("response"),
             })
         if not responses:
             return "No se han enviado solicitudes a proveedores aun."
-        return json.dumps(responses, ensure_ascii=False)
+        total = len(responses)
+        responded = sum(1 for r in responses if r["status"] == "responded")
+        return json.dumps({
+            "total_partners": total,
+            "responded": responded,
+            "pending": total - responded,
+            "all_responded": responded == total,
+            "quotes": responses,
+        }, ensure_ascii=False)
+
+    if name == "save_partner_price":
+        from app.agent.whatsapp import _clean_phone
+        digits = _clean_phone(inputs["partner_phone"])
+        now = datetime.now(timezone.utc)
+        result = await db.partner_quotes.find_one_and_update(
+            {
+                "inquiry_id": inquiry_id,
+                "partner_phone": {"$regex": digits[-9:]},
+            },
+            {"$set": {
+                "price_amount": inputs["price_amount"],
+                "price_currency": inputs.get("price_currency", "CLP"),
+                "is_original": inputs.get("is_original"),
+                "price_summary": inputs["summary"],
+                "updated_at": now,
+            }},
+            return_document=True,
+        )
+        if result:
+            return f"Precio guardado para {result['partner_name']}: ${inputs['price_amount']:,.0f} {inputs.get('price_currency','CLP')} — {inputs['summary']}"
+        return "No se encontro el registro de este proveedor para esta cotizacion."
+
+    if name == "submit_draft_for_approval":
+        from app.database import settings
+        now = datetime.now(timezone.utc)
+        await db.inquiries.update_one(
+            {"_id": inquiry_id},
+            {"$set": {
+                "agent_status": "awaiting_approval",
+                "proposed_client_message": inputs["proposed_message"],
+                "proposed_best_option": inputs["best_option_summary"],
+                "agent_finished_at": now,
+                "updated_at": now,
+            }},
+        )
+        # Notificar al admin por WhatsApp
+        admin_phone = settings.admin_phone
+        if admin_phone:
+            inq = inquiry
+            client_name = inq.get("name", "un cliente")
+            vehicle = f"{inq.get('brand','')} {inq.get('model','')} {inq.get('year','')}".strip()
+            part = inq.get("part_description", "repuesto")
+            admin_msg = (
+                f"Cotizacion lista para revision 👆\n\n"
+                f"*Cliente:* {client_name}\n"
+                f"*Vehiculo:* {vehicle}\n"
+                f"*Repuesto:* {part}\n\n"
+                f"*Mejor opcion:* {inputs['best_option_summary']}\n\n"
+                f"Entra al panel admin para aprobar o editar el mensaje antes de enviarselo al cliente."
+            )
+            await send_text(admin_phone, admin_msg)
+        return f"Borrador guardado y admin notificado. agent_status=awaiting_approval."
 
     return f"Tool desconocida: {name}"
 
@@ -260,91 +375,107 @@ async def execute_tool(name: str, inputs: dict, inquiry: dict) -> str:
 # Instrucciones del sistema
 # ─────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """Eres el asistente de cotizaciones de ARGParts, una empresa chilena de repuestos para autos japoneses.
+SYSTEM_PROMPT = """Eres el asistente de cotizaciones de ARGParts, empresa chilena de repuestos para autos japoneses.
 
-Tu nombre no importa — lo que importa es que suenes como una persona real, no como un bot. Escribes en español chileno, de forma cercana y natural. Nada de respuestas de call center.
+Escribes en español chileno, de forma cercana y natural. Suenas como una persona del equipo, no como un bot ni un call center.
 
 ════════════════════════════════════════
 FLUJO AL RECIBIR UNA SOLICITUD NUEVA
 ════════════════════════════════════════
 
-PASO 1 — Consulta si el cliente tiene historial
+PASO 1 — Historial del cliente
 Llama get_memory con el telefono del cliente. Si ya compro antes, mencionalo calurosamente.
 
-PASO 2 — Escribe al cliente confirmando su solicitud
-Usa send_whatsapp. El mensaje debe sonar como lo escribiria una persona real:
+PASO 2 — Confirma al cliente por WhatsApp
+Usa send_whatsapp. El tono debe ser:
   - Saluda por su nombre, de forma casual
-  - Confirma el vehiculo y repuesto que pidio (en *negrita*)
-  - Dile que ya estas consultando con tus proveedores
-  - Firmalo como "ARGParts"
+  - Confirma en *negrita* el vehiculo y el repuesto
+  - Dile que ya estas consultando con proveedores
+  - Firma como "ARGParts"
+  - Ejemplo: "Hola [Nombre]! Recibimos tu solicitud para el *[repuesto]* del *[marca modelo año]*, ya estamos viendo precios con nuestros proveedores. Te aviso en cuanto tenga novedades 🙌"
 
-Ejemplo de tono correcto:
-"Hola [Nombre]! Recibimos tu solicitud para el *[repuesto]* del *[marca modelo año]*, ya estamos consultando con nuestros proveedores ahora mismo. En cuanto tengamos precios te avisamos 🙌"
+PASO 3 — Obtén proveedores activos
+Llama get_active_partners.
 
-Ejemplo de tono INCORRECTO (evitar):
-"Estimado cliente, hemos recibido su solicitud de cotización N°XXX..."
-
-PASO 3 — Obtén los proveedores activos
-Llama get_active_partners. Esto te entrega la lista completa con nombre, marca, telefono y notas de cada uno.
-
-PASO 4a — Si NO hay proveedores activos:
-  - Escribe al cliente que un asesor lo contactara pronto
+PASO 4a — Sin proveedores activos:
+  - Avisa al cliente que un asesor lo contactara pronto
   - Llama update_inquiry con agent_status="no_partners"
 
-PASO 4b — Si HAY proveedores activos:
-  Llama send_quote_request_to_partners con una message_template que:
-
-  - Empiece con "Hola {partner_name}!" (la tool reemplaza {partner_name} con el nombre real)
-  - Suene como si lo escribiera un colega del rubro, no un sistema automatizado
+PASO 4b — Con proveedores activos:
+  Llama send_quote_request_to_partners con un message_template que:
+  - Empiece con "Hola {partner_name}!"
+  - Suene como mensaje entre colegas del rubro
   - Incluya TODOS estos datos sin excepcion:
-      * Marca del vehiculo
-      * Modelo del vehiculo
-      * Año del vehiculo
-      * Descripcion completa del repuesto que pidio el cliente
-      * VIN (si el cliente lo proporciono)
-      * RUT del cliente (util para cotizaciones formales)
+      * Marca, modelo y año del vehiculo
+      * Descripcion completa del repuesto solicitado
+      * VIN si el cliente lo proporciono
+      * RUT del cliente
   - Pregunte por precio, disponibilidad y si es original o alternativo
-  - Sea breve (maximo 6 lineas)
-  - Firme como "ARGParts"
+  - Maximo 6 lineas, firma como "ARGParts"
 
-  Ejemplo de message_template correcto:
+  Ejemplo de message_template:
   "Hola {partner_name}! Te escribo de ARGParts 👋
-
-Ando buscando un *[repuesto exacto]* para un *[marca] [modelo] [año]*[, VIN: XXXX si aplica].
-
-¿Tienes disponibilidad? ¿A cuanto estaría? Si puedes indicar si es original o alternativo mejor aun.
-
+Ando necesitando un *[repuesto exacto]* para un *[marca] [modelo] [año]*[, VIN: XXXX si aplica], RUT cliente: [RUT].
+¿Tienes disponibilidad? ¿A cuanto quedaría? Si puedes avisar si es original o alternativo, mejor.
 Gracias!
 ARGParts"
 
-  Luego escribe al cliente avisandole cuantos proveedores estas consultando.
-  Llama update_inquiry con agent_status="awaiting_partners".
+  Luego llama update_inquiry con status="pending" y agent_status="awaiting_partners".
 
-PASO 5 — Guarda el vehiculo del cliente en memoria
-Llama save_memory con key="vehiculo_principal" y el valor con marca+modelo+año.
-
-PASO 6 — Actualiza la cotizacion
-Llama update_inquiry con status="pending" y agent_status="awaiting_partners".
+PASO 5 — Guarda vehiculo en memoria
+Llama save_memory con key="vehiculo_principal" y marca+modelo+año como valor.
 
 ════════════════════════════════════════
 FLUJO AL RECIBIR RESPUESTA DE PROVEEDOR
 ════════════════════════════════════════
 
-1. Agradece al proveedor brevemente por whatsapp (send_whatsapp).
-2. Llama check_partner_responses para ver cuantos han respondido.
-3. Si TODOS respondieron:
-   - Escribe al cliente un resumen claro con las opciones y precios recibidos
-   - Preguntale cual prefiere
-   - Llama update_inquiry con agent_status="quoted"
-4. Si aun faltan respuestas, no hagas nada mas — espera.
+IMPORTANTE: NUNCA envies la cotizacion directamente al cliente. El flujo es:
+  1. Agradecer al proveedor
+  2. Guardar el precio estructurado
+  3. Revisar si faltan respuestas
+  4. Cuando todos respondieron: preparar borrador y esperar aprobacion del admin
+
+Paso a paso:
+
+1. Agradece al proveedor por whatsapp (send_whatsapp), mensaje breve y cordial.
+   Ejemplo: "Gracias [nombre]! Anotado todo, quedamos en contacto 👍"
+
+2. Llama save_partner_price con:
+   - partner_phone: el telefono desde donde respondio
+   - price_amount: el precio en numeros (sin simbolos)
+   - is_original: true/false segun lo que dijo el proveedor (null si no quedo claro)
+   - summary: resumen de 1 linea con la oferta ("Original Toyota, stock inmediato, $45.000")
+
+3. Llama check_partner_responses para ver cuantos han respondido.
+
+4. Si aun faltan respuestas (all_responded = false): detente aqui, no hagas nada mas.
+
+5. Si TODOS respondieron (all_responded = true):
+   a. Analiza todas las cotizaciones y decide la mejor opcion (precio, originalidad, disponibilidad)
+   b. Prepara dos textos:
+      - proposed_message: el mensaje completo que se le enviaria al cliente si el admin aprueba.
+        * Tono: natural, como si lo escribiera alguien del equipo
+        * Incluye las opciones disponibles con precios
+        * Indica cual es la mejor y por que
+        * NO incluyas frases de aprobacion ni menciones al proceso interno
+        * Ejemplo de tono: "Hola [Nombre]! Ya tenemos precios para el *[repuesto]*. 
+          La mejor opcion que encontramos es con [proveedor], *$XX.000*, [original/alternativo], disponible de inmediato.
+          Tambien hay una opcion alternativa con [proveedor2] a *$YY.000*.
+          ¿Te acomoda? Quedamos a tu disposicion."
+      - best_option_summary: resumen interno de 1-2 lineas para el admin
+        * Ejemplo: "Mejor: Toyotoshi, original, $45.000 (stock). Alternativa: RepuestosCL, $28.000."
+   c. Llama submit_draft_for_approval con esos dos textos.
+   d. NO llames send_whatsapp al cliente — el admin aprobara antes.
 
 ════════════════════════════════════════
 FLUJO AL RECIBIR MENSAJE DEL CLIENTE
 ════════════════════════════════════════
 
 1. Responde de forma natural y util segun lo que pregunte.
-2. Si pregunta por el estado: llama check_partner_responses y cuéntale cuántos respondieron.
-3. Si confirma que quiere una opcion: llama update_inquiry con status="closed".
+2. Si pregunta por el estado: llama check_partner_responses y cuentale cuantos respondieron.
+3. Si la cotizacion ya esta en "awaiting_approval": dile que el equipo ya tiene los precios y
+   que en breve le enviaran la cotizacion (sin mencionar el proceso de aprobacion interno).
+4. Si confirma que quiere una opcion: llama update_inquiry con status="closed".
 
 ════════════════════════════════════════
 REGLAS DE FORMATO WHATSAPP

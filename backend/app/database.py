@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     evolution_api_key: str = ""       # API key global de la instancia
     evolution_instance: str = ""      # nombre de la instancia, ej: argparts
 
+    # Numero del admin para notificaciones internas (con codigo de pais, ej: 56912345678)
+    admin_phone: str = ""
+
     # AI providers (opcionales)
     anthropic_api_key: str = ""
     open_ai_api_key: str = ""
